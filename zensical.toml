@@ -14,10 +14,10 @@
 
 [project]
 site_name = "Cloudera On Premise Community Edition"
-site_author = "<YOUR_SITE_AUTHOR>"
+site_author = "Cloudera Labs"
 copyright = """2026 Cloudera, Inc. All rights reserved.<br><a href="https://www.cloudera.com/legal/terms-and-conditions.html" target="_blank">Terms & Conditions | </a>  <a href="https://www.cloudera.com/legal/policies.html" target="_blank"> Privacy Policy and Data Policy</a>"""
-repo_url = "https://<YOUR_GIT_HOST>/<YOUR_REPO_NAME>"
-repo_name = "<YOUR_REPO_NAME>"
+repo_url = "https://github.com/cloudera-labs/cloudera-ce-aws.git"
+repo_name = "cloudera-ce-aws"
 
 docs_dir = "docs"
 site_dir = "docs/zensical/_build"
