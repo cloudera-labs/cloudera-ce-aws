@@ -63,7 +63,7 @@ ansible-navigator run playbooks/ozone-cluster.yml -e @config.yml
 
 ## Available Cluster Topologies
 
-After stages 1–3, deploy any of the following clusters:
+After stages 1–3, deploy any one of the following clusters:
 
 | Playbook | Description |
 |----------|-------------|
@@ -75,4 +75,4 @@ After stages 1–3, deploy any of the following clusters:
 | `csa-cluster.yml` | CSA (Cloudera Streaming Analytics) full cluster |
 
 !!! tip
-    The cluster playbooks are designed to be run after the base deployment (infrastructure + services + CMS). You can deploy multiple cluster configurations sequentially.
+    The cluster playbooks are designed to be run after the base deployment (infrastructure + services + CMS).

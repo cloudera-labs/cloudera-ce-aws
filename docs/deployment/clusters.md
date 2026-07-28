@@ -14,7 +14,7 @@
 
 # Clusters
 
-After deploying infrastructure, services, and Cloudera Manager, deploy one or more cluster topologies.
+After deploying infrastructure, services, and Cloudera Manager, deploy one of the provided cluster topologies.
 
 ## Cluster Playbook Steps
 
@@ -54,8 +54,6 @@ Each cluster playbook follows a consistent pattern:
     # - role: cloudera.exe.prereq_ssb_database             # Flink clusters
 ```
 
----
-
 ## Available Clusters
 
 ### Kafka Cluster
@@ -78,8 +76,6 @@ ansible-navigator run playbooks/kafka-cluster.yml -e @config.yml
 | **Master3** | Hive Metastore, HDFS Secondary NameNode, Solr Server, ZooKeeper Server |
 | **Workers** | Kafka Brokers, HDFS DataNodes, HBase RegionServers, YARN NodeManagers |
 
----
-
 ### Ozone Cluster
 
 An Ozone-enabled base cluster with HDFS, YARN, and Ozone storage.
@@ -87,8 +83,6 @@ An Ozone-enabled base cluster with HDFS, YARN, and Ozone storage.
 ```bash
 ansible-navigator run playbooks/ozone-cluster.yml -e @config.yml
 ```
-
----
 
 ### NiFi Cluster
 
@@ -125,8 +119,6 @@ cloudera_manager_csds:
 |----------|-----------------|
 | **Master3** | NiFi Registry Server, NiFi Registry Gateway |
 | **Workers** | NiFi Node |
-
----
 
 ### NiFi 2.0 Cluster
 
@@ -165,8 +157,6 @@ cloudera_manager_csds:
 
 **Parcels**: CDH + CFM `4.10.0.0-154`
 
----
-
 ### Flink Cluster
 
 A base cluster with Apache Flink for stream processing and SQL Stream Builder.
@@ -204,8 +194,6 @@ cloudera_manager_csds:
 | **Master2** | SSB Materialized View Engine, SSB Streaming SQL Engine |
 | **Workers** | Kafka Brokers (required for SSB) |
 
----
-
 ### CSA Cluster
 
 A full Cloudera Streaming Analytics cluster combining Kafka, Flink, and SQL Stream Builder.
@@ -215,34 +203,6 @@ ansible-navigator run playbooks/csa-cluster.yml -e @config.yml
 ```
 
 **Services**: All Kafka cluster services + Flink + SQL Stream Builder
-
----
-
-### ECS Cluster
-
-Embedded Container Service for running Cloudera Data Services (CDW, CDE, CAI).
-
-```bash
-ansible-navigator run playbooks/ecs-cluster.yml -e @config.yml
-```
-
-!!! note
-    ECS requires additional infrastructure (ECS master/worker nodes) and uses the `hosts_ecs.tf` topology.
-
----
-
-### One-Node Cluster
-
-All-in-one deployment on a single `r5a.4xlarge` instance — all roles co-located.
-
-```bash
-ansible-navigator run playbooks/one-node-cluster.yml -e @config.yml
-```
-
-!!! note
-    Uses the `hosts_onenode.tf` topology. Suitable for development, testing, and demonstrations.
-
----
 
 ## Runtime
 

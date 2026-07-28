@@ -52,15 +52,27 @@ After running:
 
 ## Customizing Node Sizing
 
-Override instance types and counts in `config.yml`:
+Edit the host module inputs directly in the `tf_cluster_aws/hosts_*.tf` files. Each host group is defined as a module block with `instance_type`, `quantity`, and `root_volume` inputs:
 
-```yaml
-infra:
-  nodes:
-    gateway:     { count: 1, instance_type: "t3a.medium",  root_volume_size: 100 }
-    services:    { count: 1, instance_type: "t3a.large",   root_volume_size: 500 }
-    masters:     { count: 3, instance_type: "t3a.xlarge",  root_volume_size: 250 }
-    workers:     { count: 4, instance_type: "t3a.xlarge",  root_volume_size: 250 }
-    cms:         { count: 1, instance_type: "r5a.xlarge",  root_volume_size: 300 }
-    sdx:         { count: 1, instance_type: "t3a.xlarge",  root_volume_size: 500 }
+| File | Module | Default Instance Type | Qty | Root Volume |
+|------|--------|-----------------------|-----|-------------|
+| `hosts_common.tf` | `gateway` | `t3a.medium` | 1 | — |
+| `hosts_common.tf` | `services` | `t3a.large` | 1 | 500 GB |
+| `hosts_base.tf` | `manager` | `r5a.xlarge` | 1 | 300 GB |
+| `hosts_base.tf` | `sdx` | `t3a.xlarge` | 1 | 500 GB |
+| `hosts_base.tf` | `base_masters` | `t3a.xlarge` | 3 | 250 GB |
+| `hosts_base.tf` | `base_workers` | `t3a.xlarge` | 4 | 250 GB |
+
+For example, to increase master nodes to `r5a.xlarge` with 500 GB root volumes, edit `tf_cluster_aws/hosts_base.tf`:
+
+```hcl
+module "base_masters" {
+  # ...
+  instance_type = "r5a.xlarge"
+  quantity      = 3
+
+  root_volume = {
+    volume_size = 500
+  }
+}
 ```
