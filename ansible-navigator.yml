@@ -53,7 +53,8 @@ ansible-navigator:
         ANSIBLE_DEPRECATION_WARNINGS: false
         ANSIBLE_HOST_KEY_CHECKING: false
         ANSIBLE_SSH_RETRIES: 10
-    image: <YOUR_EE_IMAGE>:latest
+    # image: ghcr.io/cloudera-labs/cloudera-ce-aws:latest
+    image: localhost/cloudera-ce-aws:1.0.0
     pull:
       policy: tag
     volume-mounts:

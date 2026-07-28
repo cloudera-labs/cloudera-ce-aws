@@ -16,6 +16,7 @@
 ansible-navigator.log
 runs
 context
+builder/build.log
 
 # Generated SSH keys and local configuration
 *.pem

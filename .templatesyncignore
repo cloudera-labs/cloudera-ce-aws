@@ -12,29 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Template Sync Ignore File
-# This file defines which files should be excluded when syncing from the template repository
-# Syntax follows glob patterns similar to .gitignore
-# Doc: https://github.com/AndreasAugustin/actions-template-sync#ignore-files
-
-# Exclude all files except the specified
-:!playbooks/cluster.yml
-:!playbooks/infrastructure.yml
-:!playbooks/services.yml
+# Allowlist: only sync these files from the template
 *
 
-# # Exclude the initialization workflow (only runs once when repo is created from template)
-# .github/workflows/initialize_repo.yml
+# Playbooks (all topologies)
+:!playbooks/infrastructure.yml
+:!playbooks/infrastructure-teardown.yml
+:!playbooks/services.yml
+:!playbooks/cms.yml
+:!playbooks/ozone-cluster.yml
 
-# # Exclude the ignore.yml playbook from syncing
-# playbooks/ignore.yml
+# Playbooks (base, ECS)
+:!playbooks/pause.yml
+:!playbooks/resume.yml
 
-# # Include only specific playbooks by excluding everything else and then allowing specific files
-# # Note: The action will sync everything by default except what's listed here
-# # To only sync specific files, you would exclude all and then use negation patterns
+# Playbooks (base)
+:!playbooks/kafka-cluster.yml
+:!playbooks/flink-cluster.yml
+:!playbooks/nifi-cluster.yml
+:!playbooks/nifi2.0-cluster.yml
+:!playbooks/csa-cluster.yml
 
-# # Example: If you wanted to exclude all playbooks except cluster.yml, infrastructure.yml, and services.yml:
-# # playbooks/*
-# # !playbooks/cluster.yml
-# # !playbooks/infrastructure.yml
-# # !playbooks/services.yml
+
+# Templates (all topologies)
+:!playbooks/templates/cloudera_manager.caddyfile.j2
+:!playbooks/templates/deployment.html.j2
+:!playbooks/templates/freeipa.caddyfile.j2
+:!playbooks/templates/ipa-rewrite.conf.j2
+:!playbooks/templates/knox.caddyfile.j2
+:!playbooks/templates/pgadmin.caddyfile.j2
+:!playbooks/templates/summary.caddyfile.j2
+:!playbooks/templates/tf_cluster_aws.tfvars.j2
+
+# Templates (base, onenode)
+:!playbooks/templates/grafana.caddyfile.j2
+:!playbooks/templates/prometheus.caddyfile.j2
+
+# Terraform (all topologies)
+:!tf_cluster_aws/main.tf
+:!tf_cluster_aws/variables.tf
+:!tf_cluster_aws/outputs.tf
+:!tf_cluster_aws/vpc.tf
+:!tf_cluster_aws/ssh.tf
+:!tf_cluster_aws/network.tf
+:!tf_cluster_aws/hosts_common.tf
+:!tf_cluster_aws/inventory.tf
+
+# Terraform (base, ECS)
+:!tf_cluster_aws/hosts_base.tf
+
+# Terraform (base)
+:!tf_cluster_aws/pricing.tf
+
+# Shared config (all topologies)
+:!inventory.yml
+:!inventory-template.yml
+:!.gitignore

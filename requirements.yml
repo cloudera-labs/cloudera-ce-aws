@@ -25,35 +25,28 @@ collections:
     type: git
     version: main
 
+
   # Terraform provider
   - name: cloud.terraform
-    version: 3.0.0
+    version: 4.0.0
 
   # AWS
   - name: amazon.aws
     version: 9.5.1
-  - name: community.aws
-    version: 9.3.0
-
-  # Kubernetes (needed for ECS topology)
-  - name: kubernetes.core
-    version: 5.3.0
-
-  # General utilities
-  - name: ansible.posix
-    version: 1.6.1
-  - name: ansible.utils
-    version: 5.1.2
-  - name: community.crypto
-    version: 2.22.1
-  - name: community.general
-    version: 11.1.2
 
   # Services
   - name: community.postgresql
     version: 3.7.0
   - name: freeipa.ansible_freeipa
     version: 1.15.1
+
+  # General utilities
+  - name: ansible.posix
+    version: 1.6.1
+  - name: ansible.utils
+    version: 5.1.2    
+  - name: community.crypto
+    version: 2.22.1
 
 roles:
   - name: geerlingguy.postgresql
