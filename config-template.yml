@@ -54,7 +54,7 @@ owner_email: "{{ mandatory }}" # Used for resource tagging and pgAdmin login
 # caddy_self_signed: true
 # kerberos_realm: "CLDR.INTERNAL"
 # dns_domain: "cldr.internal"
-# public_domain: "pvc.cloudera-labs.com"
+# public_domain: "nip.io" # Externally routable domain for reverse proxy endpoints. See https://sslip.io/
 
 ### ECS-specific versions (only required for ECS topology)
 #

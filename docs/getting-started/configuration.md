@@ -49,8 +49,15 @@ jdk_version: 17
 
 ```yaml
 dns_domain: "cldr.internal"            # Internal domain managed by local FreeIPA
-public_domain: "pvc.cloudera-labs.com"  # External domain for reverse proxy endpoints
+public_domain: "nip.io"             # External domain for reverse proxy endpoints
 ```
+
+The `public_domain` must be an externally routable domain so that reverse proxy
+endpoints are reachable from outside the cluster. By default, we use the
+[sslip.io](https://sslip.io/) Magic DNS service, which maps hostnames containing
+an embedded IP address back to that IP (e.g. `cm.10.0.0.1.nip.io` resolves to
+`10.0.0.1`). This removes the need to configure external DNS records for
+development and testing environments.
 
 ### Feature Toggles
 

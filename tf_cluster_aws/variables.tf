@@ -66,7 +66,7 @@ variable "igw_name" {
 variable "public_domain" {
   type        = string
   description = "Domain for public hosts"
-  default     = "pvc.cloudera-labs.com"
+  default     = "nip.io"
 }
 
 variable "vpc_ingress_cidr" {

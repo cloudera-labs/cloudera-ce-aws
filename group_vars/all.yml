@@ -49,7 +49,7 @@ jdk_version: 17
 caddy_self_signed: true
 kerberos_realm: "CLDR.INTERNAL" # The Kerberos realm managed by the local FreeIPA server
 dns_domain: "cldr.internal" # Non-routable, internal domain managed by the local FreeIPA server
-public_domain: "pvc.cloudera-labs.com" # Externally routable domain for reverse proxy endpoints
+public_domain: "nip.io" # Externally routable domain for reverse proxy endpoints
 
 ### ECS-specific versions (only used when ecs_masters group is populated)
 # ecs_version: 1.5.5-h2000
