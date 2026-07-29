@@ -35,6 +35,8 @@ collections:
     version: 9.5.1
 
   # Services
+  - name: community.general
+    version: 11.1.2
   - name: community.postgresql
     version: 3.7.0
   - name: freeipa.ansible_freeipa
