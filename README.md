@@ -14,6 +14,8 @@
 
 # Cloudera On Premise Community Edition
 
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B449%2Fgit%40github.com%3Acloudera-labs%2Fcloudera-ce-aws.git.svg?type=small)](https://app.fossa.com/projects/custom%2B449%2Fgit%40github.com%3Acloudera-labs%2Fcloudera-ce-aws.git?ref=badge_small)
+
 Ansible + Terraform automation for deploying Cloudera Private Cloud on AWS. Constructs a ring-fenced, 10-node cluster accessible via SSH and reverse HTTPS proxies.
 
 - Self-contained DNS, Kerberos, database, and TLS services
