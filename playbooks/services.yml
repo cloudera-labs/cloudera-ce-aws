@@ -17,7 +17,7 @@
   hosts: all
   gather_facts: false
   tags:
-    - readiness
+    - always
   tasks:
     - name: Check if host is ready
       ansible.builtin.wait_for_connection:
@@ -318,6 +318,108 @@
     - role: cloudera.exe.freeipa_server_ecs
       when: groups['ecs_masters'] is defined and groups['ecs_masters'] | length > 0
 
+- name: Configure Grafana user groups in FreeIPA
+  hosts: freeipa
+  gather_facts: false
+  become: true
+  tags:
+    - grafana
+  vars:
+    ipa_base_dn: "{{ dns_domain.split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+    ipaadmin_password: "{{ freeipa_password | default(lookup('env', 'IPA_PASSWORD', default='Undefined')) }}"
+  tasks:
+    - name: Configure FreeIPA LDAP for Grafana authentication
+      when: enable_prometheus | default(false)
+      block:
+        - name: Create group for service accounts
+          freeipa.ansible_freeipa.ipagroup:
+            ipaadmin_password: "{{ ipaadmin_password }}"
+            name: service-accounts
+            description: "Non-human service accounts for application integrations"
+            state: present
+
+        - name: Create non-expiring password policy for the group
+          freeipa.ansible_freeipa.ipapwpolicy:
+            ipaadmin_password: "{{ ipaadmin_password }}"
+            name: service-accounts
+            priority: 10
+            maxlife: 0  # 0 disables password expiration
+            state: present
+
+        - name: Provision the Grafana bind user
+          freeipa.ansible_freeipa.ipauser:
+            ipaadmin_password: "{{ ipaadmin_password }}"
+            name: grafana-bind
+            first: Grafana
+            last: Service
+            password: "{{ grafana_bind_password }}"
+            update_password: on_create
+            state: present
+
+        - name: Add Grafana bind user to the service accounts group
+          freeipa.ansible_freeipa.ipagroup:
+            ipaadmin_password: "{{ ipaadmin_password }}"
+            name: service-accounts
+            user:
+              - grafana-bind
+            action: member
+            state: present
+
+        - name: Ensure Grafana RBAC groups exist in FreeIPA
+          freeipa.ansible_freeipa.ipagroup:
+            ipaadmin_password: "{{ ipaadmin_password }}"
+            name: "{{ __auth_group.name }}"
+            description: "{{ __auth_group.desc }}"
+            state: present
+          loop: "{{ grafana_auth_groups }}"
+          loop_control:
+            loop_var: __auth_group
+            label: "{{ __auth_group.name }}"
+
+- name: Configure Grafana LDAP Integration
+  hosts: postgresql
+  become: true
+  tags:
+    - grafana
+  vars:
+    ipaserver_host: "{{ groups['freeipa'] | first }}"
+    ipa_base_dn: "{{ dns_domain.split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+  handlers:
+    - name: Restart Grafana
+      ansible.builtin.service:
+        name: grafana-server
+        state: restarted
+  tasks:
+    - name: Configure Grafana to authenticate with FreeIPA LDAP
+      when: enable_prometheus | default(false)
+      block:
+        - name: Enable FreeIP LDAP authentication
+          community.general.ini_file:
+            path: /etc/grafana/grafana.ini
+            section: auth.ldap
+            option: "{{ __ldap_config.key }}"
+            value: "{{ __ldap_config.value }}"
+            owner: root
+            group: grafana
+            mode: '0640'
+          loop:
+            - { key: 'enabled', value: 'true' }
+            - { key: 'config_file', value: '/etc/grafana/ldap.toml' }
+            - { key: 'allow_sign_up', value: 'true' }
+          loop_control:
+            loop_var: "__ldap_config"
+            label: "{{ __ldap_config.key }}"
+          notify: Restart Grafana
+
+        - name: Deploy Grafana ldap.toml configuration
+          ansible.builtin.template:
+            src: grafana_ldap.toml.j2
+            dest: /etc/grafana/ldap.toml
+            owner: root
+            group: grafana
+            mode: '0640'
+          notify: Restart Grafana
+
 - name: Configure Kerberos globally
   hosts: all
   gather_facts: true
@@ -326,7 +428,7 @@
   roles:
     - cloudera.exe.prereq_kerberos
 
-- name: Setup postgres user account
+- name: Setup PostgreSQL user account
   hosts: postgresql
   become: true
   tags: database
@@ -341,7 +443,7 @@
             home: "/var/lib/postgres"
             shell: "/bin/false"
 
-- name: Enroll Postgresql service with FreeIPA
+- name: Enroll PostgreSQL service with FreeIPA
   hosts: postgresql
   gather_facts: true
   become: true
@@ -357,7 +459,7 @@
     - role: cloudera.exe.freeipa_server_enrolled_tls
       when: enable_postgres_tls | default(false)
 
-- name: Provision Postgresql services
+- name: Provision PostgreSQL services
   hosts: postgresql
   gather_facts: true
   become: true

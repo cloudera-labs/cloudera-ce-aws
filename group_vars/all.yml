@@ -102,6 +102,16 @@ external_auth_user_mappings:
     auth_roles:
       - ROLE_OPERATOR
 
+### Grafana Authentication with FreeIPA
+grafana_bind_password: "{{ common_password }}"
+grafana_auth_groups:
+  - name: "grafana-admins"
+    desc: "Full admin access in Grafana"
+  - name: "grafana-editors"
+    desc: "Dashboard editing access in Grafana"
+  - name: "grafana-viewers"
+    desc: "Read-only access in Grafana"
+
 # Pin FreeIPA package to overcome missing Samba package issue
 freeipa_client_packages:
   - "ipa-client-4.12.2-14.el9_6"
