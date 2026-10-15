@@ -32,7 +32,8 @@
 :!playbooks/nifi-cluster.yml
 :!playbooks/nifi2.0-cluster.yml
 :!playbooks/csa-cluster.yml
-
+:!playbooks/full-cluster.yml
+:!playbooks/streaming-cluster.yml
 
 # Templates (all topologies)
 :!playbooks/templates/cloudera_manager.caddyfile.j2
