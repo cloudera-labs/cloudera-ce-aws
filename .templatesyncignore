@@ -47,6 +47,7 @@
 
 # Templates (base, onenode)
 :!playbooks/templates/grafana.caddyfile.j2
+:!playbooks/templates/grafana_ldap.toml.j2
 :!playbooks/templates/prometheus.caddyfile.j2
 
 # Terraform (all topologies)
@@ -55,6 +56,7 @@
 :!tf_cluster_aws/outputs.tf
 :!tf_cluster_aws/vpc.tf
 :!tf_cluster_aws/ssh.tf
+:!tf_cluster_aws/ssh_config.tf
 :!tf_cluster_aws/network.tf
 :!tf_cluster_aws/hosts_common.tf
 :!tf_cluster_aws/inventory.tf

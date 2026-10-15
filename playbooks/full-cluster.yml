@@ -1,0 +1,1299 @@
+---
+# Copyright 2026 Cloudera, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Base Cluster with all services
+
+
+- name: Base cluster version variables
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set cluster version variables
+      ansible.builtin.set_fact:
+        cloudera_manager_csds:
+          - https://archive.cloudera.com/p/csa/1.17.0.0/csd/FLINK-1.20.1-csa1.17.0.0-77091851.jar
+          - https://archive.cloudera.com/p/csa/1.17.0.0/csd/SQL_STREAM_BUILDER-1.20.1-csa1.17.0.0-77091851.jar
+          - https://archive.cloudera.com/p/cdv/8.1.1.1000/redhat9/yum/DATAVIZ-8.1.1.1000-3.p1.77069840.jar
+          - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/NIFI-2.6.0.4.12.0.0-914.jar
+          - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/NIFIREGISTRY-2.6.0.4.12.0.0-914.jar
+        all_repo_urls:
+          - https://archive.cloudera.com/p/cdh7/7.3.2.0/parcels/
+          - https://archive.cloudera.com/p/csa/1.17.0.0/parcels/
+          - https://archive.cloudera.com/p/cdv/8.1.1.1000/parcels/
+          - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/
+        cloudera_parcels:
+          CDH: "7.3.2-1.cdh7.3.2.p0.77083870"
+          FLINK: "1.20.1-csa1.17.0.0-77091851"
+          DATAVIZ: "8.1.1.1000-3.p1.77069840"
+          CFM: "4.12.0.0-914"
+
+- name: Configure hosts for cluster services
+  hosts: base
+  gather_facts: true
+  become: true
+  tags:
+    - prereqs
+  roles:
+    - role: cloudera.exe.prereq_kafka
+    - role: cloudera.exe.prereq_atlas
+    - role: cloudera.exe.prereq_hbase
+    - role: cloudera.exe.prereq_hdfs
+    - role: cloudera.exe.prereq_hive
+    - role: cloudera.exe.prereq_knox
+    - role: cloudera.exe.prereq_ranger
+    - role: cloudera.exe.prereq_yarn
+    - role: cloudera.exe.prereq_zookeeper
+    - role: cloudera.exe.prereq_flink
+    - role: cloudera.exe.prereq_ssb
+    - role: cloudera.exe.prereq_impala
+    - role: cloudera.exe.prereq_smm
+    - role: cloudera.exe.prereq_kudu
+    - role: cloudera.exe.prereq_nifi
+    - role: cloudera.exe.prereq_nifiregistry
+    - role: cloudera.exe.postgresql_client
+    - role: cloudera.exe.prereq_dataviz
+    - role: cloudera.exe.prereq_hue
+
+- name: Configure databases for cluster services
+  hosts: postgresql
+  gather_facts: true
+  become: true
+  tags:
+    - databases
+  vars:
+    database_type: "postgresql"
+    database_host: "{{ groups['postgresql'] | first }}"
+  roles:
+    - role: cloudera.exe.prereq_ranger_database
+    - role: cloudera.exe.prereq_hive_database
+    - role: cloudera.exe.prereq_knox_database
+      when: cloudera_runtime_version is version('7.3.1', 'ge', version_type='loose')
+    - role: cloudera.exe.prereq_ssb_database
+    - role: cloudera.exe.prereq_hue_database
+    - role: cloudera.exe.prereq_smm_database
+    - role: cloudera.exe.prereq_schemaregistry_database
+    - role: cloudera.exe.prereq_dataviz_database
+
+- name: Configure reverse proxy for cluster services
+  hosts: reverse_proxy
+  gather_facts: true
+  become: true
+  tags:
+    - reverse_proxy
+  vars:
+    tf_inventory: "{{ playbook_dir }}/../tf_cluster_aws"
+    external_subdomain: "{{ lookup('cloud.terraform.tf_output', 'gateways', project_path=tf_inventory) | map(attribute='public_ip') | first }}"
+    caddy_service: caddy
+  handlers:
+    - name: Reload Caddy
+      ansible.builtin.service:
+        name: caddy
+        state: reloaded
+  tasks:
+    - name: Install Knox reverse proxy
+      ansible.builtin.template:
+        src: knox.caddyfile.j2
+        dest: /etc/caddy/Caddyfile.d/knox.caddyfile
+        mode: "0644"
+      vars:
+        external_domain: "knox.{{ external_subdomain }}.{{ public_domain }}"
+        knox_proxy_fqdn: "{{ groups['knox_gateway'] | first }}"
+      notify: Reload Caddy
+
+- name: Configure parcels and CSDs for cluster services
+  hosts: cloudera_manager
+  gather_facts: false
+  become: true
+  tags:
+    - csds
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  tasks:
+    - name: Install available CSDs
+      ansible.builtin.include_role:
+        name: cloudera.exe.cm_csd
+      vars:
+        cm_license_path: "{{ lookup('env', 'CDP_LICENSE_FILE') }}"
+        cloudera_manager_repo_username: "{{ lookup('cloudera.cluster.cm_license', cm_license_path).uuid }}"
+        cloudera_manager_repo_password: "{{ lookup('cloudera.cluster.cm_license', cm_license_path).password }}"
+        cloudera_manager_csd_restarted: true
+        cloudera_manager_csds: "{{ hostvars['localhost']['cloudera_manager_csds'] }}"
+
+    - name: Check availablity of Cloudera Manager
+      ansible.builtin.wait_for:
+        port: 7183
+        delay: 10
+        timeout: 240
+        sleep: 10
+
+    - name: Configure available parcels
+      cloudera.cluster.cm_config:
+        parameters:
+          remote_parcel_repo_urls: "{{ all_repo_urls | join(',') }}"
+      delegate_to: localhost
+      become: false
+      vars:
+        # Do not use the default cloudera_parcel_repo_urls value in group_vars/all.yml
+        all_repo_urls: "{{ hostvars['localhost']['all_repo_urls'] }}"
+
+- name: Provision Full cluster core
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    # These should be set in per-host role overrides by reading values from inventory (host variables)
+    dfs_data_dir_list: "/dfs/dn"
+    dfs_name_dir_list: "/dfs/nn"
+    fs_checkpoint_dir_list: "/dfs/snn"
+    yarn_nodemanager_local_dirs: "/yarn/nm"
+    kafka_zookeeper_chroot: "/kafka"
+    zookeeper_data_dir: "/var/lib/zookeeper"
+    zookeeper_data_log_dir: "/var/lib/zookeeper"
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  handlers:
+    - name: Services updated
+      ansible.builtin.set_fact:
+        services_updated: true
+  tags:
+    - cluster
+  tasks:
+    - name: Set persistent cluster status
+      ansible.builtin.set_fact:
+        services_updated: false
+
+    - name: Establish the cluster
+      tags:
+        - core
+        - host_template
+      cloudera.cluster.cluster:
+        name: full-base-cluster
+        display_name: Ozone Base
+        type: BASE_CLUSTER
+        cluster_version: "{{ cloudera_runtime_release }}"
+      register: __cluster
+      notify: Services updated
+
+    - name: Establish core settings service
+      tags:
+        - core
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: "{{ __cluster.cloudera_manager.tags['_cldr_cluster.core_settings.service_name'] }}"
+        type: CORE_SETTINGS
+        config:
+          hadoop_security_authorization: true
+          hadoop_security_authentication: "kerberos"
+      notify: Services updated
+
+- name: Provision Full cluster hosts
+  hosts: base
+  gather_facts: false
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  tags:
+    - cluster
+    - hosts
+    - parcels
+  tasks:
+    - name: Provision host to cluster
+      delegate_to: localhost
+      cloudera.cluster.host:
+        name: "{{ inventory_hostname }}" # str
+        cluster: full-base-cluster
+
+- name: Provision Full cluster parcels
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Override group_vars/all.yml cloudera_parcels with the full set required by this cluster
+    cloudera_parcels: "{{ hostvars['localhost']['cloudera_parcels'] }}"
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  tags:
+    - cluster
+    - parcels
+  tasks:
+    - name: Activate parcels
+      cloudera.cluster.parcel:
+        cluster: full-base-cluster
+        name: "{{ __parcel.key }}"
+        parcel_version: "{{ __parcel.value }}"
+        state: "activated"
+      loop: "{{ cloudera_parcels | dict2items }}"
+      loop_control:
+        loop_var: __parcel
+        label: "{{ __parcel.value }}"
+
+- name: Install additional JDK for CFM parcel version is 4.x+
+  hosts: cluster
+  gather_facts: yes
+  become: yes
+  tags:
+    - nifi
+    - jdkk
+  roles:
+    - cloudera.exe.prereq_jdk
+  vars:
+    additional_jdk_packages:
+      - zulu21-jdk
+    additional_jdk_repository: "https://cdn.azul.com/zulu/bin/zulu-repo-1.0.0-1.noarch.rpm"
+    additional_jdk_key: "https://repos.azul.com/azul-repo.key"
+
+
+- name: Retrieve keystore and truststore values for NiFi and NiFi Registry service
+  hosts: base
+  gather_facts: false
+  become: true
+  tags:
+    - nifi
+  tasks:
+    - name: Read keystore password file
+      ansible.builtin.slurp:
+        src: /var/lib/cloudera-scm-agent/agent-cert/cm-auto-host_key.pw
+      register: keystore_password_result
+      no_log: true
+
+    - name: Set keystore password fact
+      ansible.builtin.set_fact:
+        keystore_password: "{{ keystore_password_result.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Get Truststore password from CM API
+      delegate_to: localhost
+      ansible.builtin.uri:
+        url: "https://cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}/api/v58/certs/truststorePassword"
+        method: GET
+        user: admin
+        password: "{{ cloudera_manager_admin_password }}"
+        validate_certs: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary(false, true) }}"
+        return_content: true
+      register: truststore_password_response
+      no_log: true
+
+    - name: Set truststore password fact
+      ansible.builtin.set_fact:
+        truststore_password: "{{ truststore_password_response.content }}"
+      no_log: true
+
+- name: Provision cluster services
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    # These should be set in per-host role overrides by reading values from inventory (host variables)
+    base_dn: "{{ dns_domain.split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+    keystore_password: "{{ hostvars[groups['base'] | first]['keystore_password'] }}"
+    truststore_password: "{{ hostvars[groups['base'] | first]['truststore_password'] }}"
+    dfs_data_dir_list: "/dfs/dn"
+    dfs_name_dir_list: "/dfs/nn"
+    fs_checkpoint_dir_list: "/dfs/snn"
+    yarn_nodemanager_local_dirs: "/yarn/nm"
+    kafka_zookeeper_chroot: "/kafka"
+    zookeeper_data_dir: "/var/lib/zookeeper"
+    zookeeper_data_log_dir: "/var/lib/zookeeper"
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  handlers:
+    - name: Services updated
+      ansible.builtin.set_fact:
+        services_updated: true
+  tags:
+    - cluster
+    - services
+  tasks:
+    - name: Get reference to cluster
+      tags:
+        - host_template
+      cloudera.cluster.cluster:
+        name: full-base-cluster
+      register: __cluster
+
+    - name: Establish ZooKeeper service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: zookeeper
+        type: ZOOKEEPER
+        config:
+          quorum_auth_enable_sasl: true
+          enableSecurity: true
+        role_config_groups:
+          - type: SERVER
+            config:
+              dataDir: "{{ zookeeper_data_dir }}"
+              dataLogDir: "{{ zookeeper_data_log_dir }}"
+      register: __zookeeper
+      notify: Services updated
+
+    - name: Establish HDFS service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hdfs
+        type: HDFS
+        config:
+          dfs_encrypt_data_transfer_algorithm: AES/CTR/NoPadding
+          hadoop_secure_web_ui: true
+          core_connector: "{{ __cluster.cloudera_manager.tags['_cldr_cluster.core_settings.service_name'] }}"
+        role_config_groups:
+          - type: DATANODE
+            config:
+              dfs_data_dir_list: "{{ dfs_data_dir_list | string }}"
+          - type: NAMENODE
+            config:
+              dfs_name_dir_list: "{{ dfs_name_dir_list | string }}"
+          - type: SECONDARYNAMENODE
+            config:
+              fs_checkpoint_dir_list: "{{ fs_checkpoint_dir_list | string }}"
+      register: __hdfs
+      notify: Services updated
+
+    - name: Establish Solr service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: solr
+        type: SOLR
+        config:
+          solr_security_authentication: kerberos
+          hdfs_service: "{{ __hdfs.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+      register: __solr
+      notify: Services updated
+
+    - name: Establish Ranger service credentials
+      tags:
+        - ranger
+        - sdx
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: ranger
+        type: RANGER
+        config:
+          rangerusersync_user_password: "{{ ranger_password }}"
+          rangertagsync_user_password: "{{ ranger_password }}"
+          keyadmin_user_password: "{{ ranger_password }}"
+          ranger_database_password: "{{ ranger_password }}"
+          rangeradmin_user_password: "{{ ranger_password }}"
+        skip_redacted: true
+
+    - name: Establish Ranger service
+      tags:
+        - ranger
+        - sdx
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: ranger
+        type: RANGER
+        config:
+          ranger_database_host: "{{ groups['postgresql'] | first }}"
+          hdfs_service: "{{ __hdfs.service.name }}"
+          solr_service: "{{ __solr.service.name }}"
+        role_config_groups:
+          - type: RANGER_USERSYNC
+            config:
+              ranger.usersync.ldap.url: "ldaps://{{ groups['freeipa'] | first }}"
+              ranger.usersync.ldap.binddn: "uid=ldap_bind_user,cn=users,cn=accounts,{{ base_dn }}"
+              ranger_usersync_ldap_ldapbindpassword: "{{ common_password }}"
+              ranger.usersync.ldap.user.searchbase: "cn=users,cn=accounts,{{ base_dn }}"
+              ranger.usersync.ldap.user.objectclass: "person"
+              ranger.usersync.ldap.user.nameattribute: "uid"
+              ranger.usersync.group.searchbase: "cn=groups,cn=accounts,{{ base_dn }}"
+              ranger.usersync.group.objectclass: "ipausergroup"
+              ranger.usersync.group.nameattribute: "cn"
+              ranger.usersync.group.memberattributename: "member"
+      register: __ranger
+      notify: Services updated
+
+    - name: Establish YARN service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: yarn
+        type: YARN
+        config:
+          hadoop_secure_web_ui: true
+          hdfs_service: "{{ __hdfs.service.name }}"
+        role_config_groups:
+          - type: NODEMANAGER
+            config:
+              yarn_nodemanager_local_dirs: "{{ yarn_nodemanager_local_dirs | string }}"
+          - type: GATEWAY
+            config:
+              mapred_submit_replication: "{{ groups['cluster'] | map('extract', hostvars) | selectattr('host_template', 'eq', 'Worker') | length }}"
+      register: __yarn
+      notify: Services updated
+
+    - name: Establish Tez service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: tez
+        type: TEZ
+        config:
+          yarn_service: "{{ __yarn.service.name }}"
+      register: __tez
+      notify: Services updated
+
+    - name: Establish Ozone service
+      tags:
+        - ozone
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: ozone
+        type: OZONE
+        config:
+          ozone.scm.primordial.node.id: "{{ groups['cluster'] | map('extract', hostvars) | selectattr('host_template', 'eq', 'Master1') | map(attribute='inventory_hostname') | first }}"
+          ozone.service.id: o3service1
+          ozone.security.enabled: true
+          solr_service: "{{ __solr.service.name }}"
+        role_config_groups:
+          - type: STORAGE_CONTAINER_MANAGER
+            config:
+              ozone-conf/ozone-site.xml_role_safety_valve: >-
+                <property>
+                  <name>hdds.scm.safemode.enabled</name>
+                  <value>false</value>
+                </property>
+      register: __ozone
+      notify: Services updated
+
+    - name: Establish Kafka service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: kafka
+        type: KAFKA
+        config:
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          zookeeper.chroot: "{{ kafka_zookeeper_chroot }}"
+          kerberos.auth.enable: true
+          service_triggers: "{{ triggers | to_json }}"
+      vars:
+        triggers:
+          - triggerName: Kafka Broker Log Directory Free Capacity Check
+            enabled: true
+            expressionEditorConfig:
+            streamThreshold: 0
+            validityWindowInMs: 120000
+            suppressed: false
+            triggerExpression: >-
+              IF (
+                SELECT kafka_log_directory_disk_free_space/kafka_log_directory_disk_total_space
+                WHERE serviceName=$SERVICENAME
+                AND last(kafka_log_directory_disk_free_space/kafka_log_directory_disk_total_space) < 0.1
+              )
+              DO health:bad
+      register: __kafka
+      notify: Services updated
+
+    - name: Establish HBase service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hbase
+        type: HBASE
+        config:
+          hbase_thriftserver_security_authentication: auth-conf
+          hbase_security_authentication: kerberos
+          hbase_security_authorization: true
+          hdfs_service: "{{ __hdfs.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+      register: __hbase
+      notify: Services updated
+
+    - name: Establish Atlas service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: atlas
+        type: ATLAS
+        config:
+          kerberos.auth.enable: true
+          hdfs_service: "{{ __hdfs.service.name }}"
+          hbase_service: "{{ __hbase.service.name }}"
+          kafka_service: "{{ __kafka.service.name }}"
+          solr_service: "{{ __solr.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+      register: __atlas
+      notify: Services updated
+
+    - name: Establish Hive service credentials
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hive
+        type: HIVE
+        config:
+          hive_metastore_database_password: "{{ hive_password }}"
+        skip_redacted: true
+
+    - name: Establish Hive service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hive
+        type: HIVE
+        config:
+          hive_metastore_database_host: "{{ groups['postgresql'] | first }}"
+          hive_metastore_database_type: postgresql
+          hive_metastore_database_name: hive
+          hive_metastore_database_port: 5432
+          hdfs_service: "{{ __hdfs.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          mapreduce_yarn_service: "{{ __yarn.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+          hbase_service: "{{ __hbase.service.name }}"
+          atlas_service: "{{ __atlas.service.name }}"
+      register: __hive
+      notify: Services updated
+
+    - name: Establish Hive-on-Tez service
+      tags:
+        - hive_on_tez
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hive_on_tez
+        type: HIVE_ON_TEZ
+        config:
+          hdfs_service: "{{ __hdfs.service.name }}"
+          hms_connector: "{{ __hive.service.name }}"
+          tez_service: "{{ __tez.service.name }}"
+          mapreduce_yarn_service: "{{ __yarn.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+          hbase_service: "{{ __hbase.service.name }}"
+          atlas_service: "{{ __atlas.service.name }}"
+      register: __hive_on_tez
+      notify: Services updated
+
+    - name: Establish Knox service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: knox
+        type: KNOX
+        config:
+          knox_gateway_database_password: "{{ knox_db_enabled | ternary(knox_password, omit) }}"
+          knox_gateway_database_host: "{{ knox_db_enabled | ternary(groups['postgresql'] | first, omit) }}"
+          knox_gateway_database_user: "{{ knox_db_enabled | ternary('knox', omit) }}"
+          knox_gateway_database_name: "{{ knox_db_enabled | ternary('knox', omit) }}"
+          kerberos.auth.enabled: true
+          ranger_service: "{{ __ranger.service.name }}"
+          hdfs_service: "{{ __hdfs.service.name }}"
+          "conf/gateway-site.xml_service_safety_valve": >-
+            <property>
+              <name>gateway.frontend.url</name>
+              <value>https://knox.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}/gateway</value>
+            </property>
+          knoxsso_redirect_whitelist_regex: "^https?:\\/\\/(.*\\.{{ public_domain | regex_escape }})(?::[0-9]+)?(?:\\/.*)?$"
+        role_config_groups:
+          - type: KNOX_GATEWAY
+            config:
+              gateway_master_secret: "{{ knox_password }}"
+              gateway_dispatch_whitelist: "^https?:\\/\\/(.*\\.{{ dns_domain | regex_escape }})(?::[0-9]+)?(?:\\/.*)?$"
+        skip_redacted: true
+      vars:
+        knox_db_enabled: "{{ cloudera_runtime_version is version('7.3.1', 'ge', version_type='loose') }}"
+      register: __knox
+
+    - name: Establish Flink service
+      tags:
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: flink
+        type: FLINK
+        config:
+          hdfs_service: "{{ __hdfs.service.name }}"
+          yarn_service: "{{ __yarn.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          kerberos.auth.enabled: true
+      register: __flink
+      notify: Services updated
+
+    - name: Establish Kudu service
+      tags:
+        - kudu
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: kudu
+        type: KUDU
+        config:
+        role_config_groups:
+          - type: KUDU_MASTER
+            config:
+              default_num_replicas: 3
+              fs_wal_dir: "/kudu/master/wal"
+              fs_data_dirs: "/kudu/master/data"
+          - type: KUDU_TSERVER
+            config:
+              fs_wal_dir: "/kudu/tablet/wal"
+              fs_data_dirs: "/kudu/tablet/data"
+      register: __kudu
+      notify: Services updated
+
+    - name: Establish Impala service
+      tags:
+        - impala
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: impala
+        type: IMPALA
+        config:
+          hdfs_service: "{{ __hdfs.service.name }}"
+          hbase_service: "{{ __hbase.service.name }}"
+          hive_service: "{{ __hive.service.name }}"
+          kudu_service: "{{ __kudu.service.name }}"
+      register: __impala
+      notify: Services updated
+
+    - name: Establish Spark3 on YARN service
+      tags:
+        - spark
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: spark3_on_yarn
+        type: SPARK3_ON_YARN
+        config:
+          yarn_service: "{{ __yarn.service.name }}"
+          hbase_service: "{{ __hbase.service.name }}"
+          atlas_service: "{{ __atlas.service.name }}"
+          knox_service: "{{ __knox.service.name }}"
+        role_config_groups:
+          - type: SPARK3_YARN_HISTORY_SERVER
+            config:
+              history_server_max_heapsize: 536870912
+      register: __spark
+      notify: Services updated
+
+    - name: Establish Livy for Spark service
+      tags:
+        - livy
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: livy
+        type: LIVY_FOR_SPARK3
+        config:
+          yarn_service: "{{ __yarn.service.name }}"
+          spark3_on_yarn_service: "{{ __spark.service.name }}"
+      register: __livy
+      notify: Services updated
+
+    - name: Establish SQL Stream Builder service credentials
+      tags:
+        - ssb
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: sql_stream_builder
+        type: SQL_STREAM_BUILDER
+        skip_redacted: true
+        config:
+          database_password: "{{ ssb_admin_password }}"
+        role_config_groups:
+          - type: MATERIALIZED_VIEW_ENGINE
+            config:
+              ssb.mve.datasource.password: "{{ ssb_mve_password }}"
+
+    - name: Establish Streams Messaging Manager service credentials
+      tags:
+        - smm
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: streams_messaging_manager
+        type: STREAMS_MESSAGING_MANAGER
+        skip_redacted: true
+        config:
+          smm_database_password: "{{ smm_password }}"
+
+    - name: Establish Streams Messaging Manager service
+      tags:
+        - smm
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: streams_messaging_manager
+        type: STREAMS_MESSAGING_MANAGER
+        config:
+          smm_database_host: "{{ groups['postgresql'] | first }}"
+          smm_database_type: postgresql
+          smm_database_name: streamsmsgmgr
+          smm_database_port: 5432
+          kafka_service: "{{ __kafka.service.name }}"
+          kerberos.auth.enable: true
+        role_config_groups:
+          - type: STREAMS_MESSAGING_MANAGER_SERVER
+            config:
+              streams.messaging.manager.internal.topics.replication.factor: 3
+      register: __smm
+      notify: Services updated
+
+    - name: Establish SQL Stream Builder service
+      tags:
+        - ssb
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: sql_stream_builder
+        type: SQL_STREAM_BUILDER
+        config:
+          flink_service: "{{ __flink.service.name }}"
+          kafka_service: "{{ __kafka.service.name }}"
+          knox_service: "{{ __knox.service.name }}"
+          database_host: "{{ groups['postgresql'] | first }}"
+          security.kerberos.enabled: true
+        role_config_groups:
+          - type: MATERIALIZED_VIEW_ENGINE
+            config:
+              ssb.mve.datasource.username: ssb_mve
+              ssb.mve.datasource.url: "jdbc:postgresql://{{ groups['postgresql'] | first }}:5432/ssb_mve"
+          - type: STREAMING_SQL_ENGINE
+            config:
+              ssb.yarn.ui.proxy: "https://{{ groups['cluster'] | map('extract', hostvars) | selectattr('host_template', 'eq', 'Master1') | map(attribute='inventory_hostname') | first }}/gateway/cdp-proxy/yarnuiv2/proxy"
+              ssb.mve.proxy: "https://{{ groups['cluster'] | map('extract', hostvars) | selectattr('host_template', 'eq', 'Master1') | map(attribute='inventory_hostname') | first }}/gateway/cdp-proxy-api/ssb-mve-api"
+      register: __ssb
+      notify: Services updated
+
+    - name: Establish NiFi service
+      tags:
+        - nifi
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: nifi
+        type: NIFI
+        config:
+          hdfs_service: "{{ __hdfs.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+          knox_service: "{{ __knox.service.name }}"
+          zookeeper_service: "{{ __zookeeper.service.name }}"
+          atlas_service: "{{ __atlas.service.name }}"
+          kerberos.auth.enabled: true
+        role_config_groups:
+          - type: NIFI_NODE
+            config:
+              nifi.jdk.home: "/usr/lib/jvm/zulu21"
+              nifi.web.https.port: 8445
+              nifi.ldap.enabled: true
+              nifi.ldap.authentication.strategy: LDAPS
+              nifi.ldap.manager.dn: "uid=admin,cn=users,cn=accounts,{{ base_dn }}"
+              nifi.ldap.manager.password: "{{ common_password }}"
+              nifi.ldap.tls.client.auth: NONE
+              nifi.ldap.tls.protocol: TLSv1.2
+              nifi.ldap.tls.truststore: /var/lib/cloudera-scm-agent/agent-cert/cm-auto-global_truststore.jks
+              nifi.ldap.tls.truststore.password: "{{ truststore_password }}"
+              nifi.ldap.tls.truststore.type: JKS
+              nifi.ldap.url: "ldaps://{{ groups['freeipa'] | first }}"
+              nifi.ldap.user.search.base: "cn=users,cn=accounts,{{ base_dn }}"
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Member Attribute: member
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Name Attribute: cn
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Object Class: posixgroup
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Search Base: "cn=groups,cn=accounts,{{ base_dn }}"
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Sync Interval: 1 min
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.User Group Name Attribute: memberOf
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.User Identity Attribute: uid
+              xml.loginIdentityProviders.provider.ldap-provider.property.Identity Strategy: USE_USERNAME
+              xml.loginIdentityProviders.provider.ldap-provider.property.User Search Filter: "uid={0}"
+              staging/authorizers.xml_role_safety_valve: "<property><name>xml.authorizers.userGroupProvider.composite-configurable-user-group-provider.property.User Group Provider 2</name><value>ldap-user-group-provider</value></property>"
+              nifi.security.identity.mapping.pattern.kerb: "^(.*?)(/.*?)?@(.*?)$"
+              nifi.security.identity.mapping.transform.kerb: LOWER
+              nifi.security.identity.mapping.value.kerb: "$1"
+      register: __nifi
+      notify: Services updated
+
+    - name: Establish NiFi Registry service
+      tags:
+        - nifiregistry
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: nifiregistry
+        type: NIFIREGISTRY
+        config:
+          hdfs_service: "{{ __hdfs.service.name }}"
+          ranger_service: "{{ __ranger.service.name }}"
+          knox_service: "{{ __knox.service.name }}"
+          nifi_service: "{{ __nifi.service.name }}"
+          kerberos.auth.enabled: true
+        role_config_groups:
+          - type: NIFI_REGISTRY_SERVER
+            config:
+              nifi.registry.jdk.home: "/usr/lib/jvm/zulu21"
+              nifi.registry.ldap.enabled: true
+              nifi.registry.ldap.authentication.strategy: LDAPS
+              nifi.registry.ldap.manager.dn: "uid=admin,cn=users,cn=accounts,{{ base_dn }}"
+              nifi.registry.ldap.manager.password: "{{ common_password }}"
+              nifi.registry.ldap.tls.client.auth: NONE
+              nifi.registry.ldap.tls.protocol: TLSv1.2
+              nifi.registry.ldap.tls.truststore: /var/lib/cloudera-scm-agent/agent-cert/cm-auto-global_truststore.jks
+              nifi.registry.ldap.tls.truststore.password: "{{ truststore_password }}"
+              nifi.registry.ldap.tls.truststore.type: JKS
+              nifi.registry.ldap.url: "ldaps://{{ groups['freeipa'] | first }}"
+              nifi.registry.ldap.user.search.base: "cn=users,cn=accounts,{{ base_dn }}"
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Member Attribute: member
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Name Attribute: cn
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Object Class: posixgroup
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Group Search Base: "cn=groups,cn=accounts,{{ base_dn }}"
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.Sync Interval: "1 mins"
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.User Group Name Attribute: memberOf
+              xml.authorizers.userGroupProvider.ldap-user-group-provider.property.User Identity Attribute: uid
+              xml.identityProviders.provider.ldap-provider.property.Identity Strategy: USE_USERNAME
+              xml.identityProviders.provider.ldap-provider.property.User Search Filter: "uid={0}"
+              staging/authorizers.xml_role_safety_valve: "<property><name>xml.authorizers.userGroupProvider.composite-configurable-user-group-provider.property.User Group Provider 2</name><value>ldap-user-group-provider</value></property>"
+              nifi.registry.security.identity.mapping.pattern.kerb: "^(.*?)(/.*?)?@(.*?)$"
+              nifi.registry.security.identity.mapping.transform.kerb: LOWER
+              nifi.registry.security.identity.mapping.value.kerb: "$1"
+              nifi.registry.security.identity.mapping.transform.dn: LOWER
+      register: __nifiregistry
+      notify: Services updated
+
+    - name: Establish Hue service
+      tags:
+        - hue
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hue
+        type: HUE
+        skip_redacted: true
+        config:
+          database_host: "{{ groups['postgresql'] | first }}"
+          database_type: postgresql
+          database_name: hue
+          database_port: 5432
+          database_password: "{{ hue_password }}"
+          hdfs_service: "{{ __hdfs.service.name }}"
+          hive_service: "hive_on_tez"
+          hms_service: "{{ __hive.service.name }}"
+          impala_service: "{{ __impala.service.name }}"
+          hue_service_safety_valve: |
+            [desktop]
+            secure_proxy_ssl_header=true
+            use_x_forwarded_host=true
+
+            [[ozone]]
+            [[[default]]]
+            fs_defaultfs=ofs://o3service1
+            webhdfs_url=https://{{ groups['cluster'] | map('extract', hostvars) | selectattr('host_template', 'eq', 'SDX') | map(attribute='inventory_hostname') | first }}:9778/webhdfs/v1
+            ssl_cert_ca_verify=true
+            security_enabled=true
+
+            [[session]]
+            csrf_trusted_origins=https://knox.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}
+            trusted_origins=knox.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}
+            secure_cookies=true
+      register: __hue
+      notify: Services updated
+
+    - name: Establish Dataviz service
+      tags:
+        - dataviz
+        - host_template
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: dataviz
+        type: DATAVIZ
+        skip_redacted: true
+        config:
+          METASTORE_DB_HOST: "{{ groups['postgresql'] | first }}"
+          METADATA_STORE: postgresql
+          METASTORE_DB_USER: dataviz
+          METASTORE_DB_PASSWORD: dataviz
+          ADMIN_USERS: "admin"
+          kerberos.auth.enable: true
+          AUTHENTICATION_BACKENDS: "arcwebbase.backends.KnoxSpnegoDjangoBackend,django.contrib.auth.backends.ModelBackend"
+      register: __dataviz
+      notify: Services updated
+
+    - name: Enable AutoTLS on the cluster (post-services configuration)
+      tags:
+        - cluster
+        - tls
+      cloudera.cluster.cluster:
+        name: full-base-cluster
+        auto_tls: true
+      notify: Services updated
+
+    - name: Configure NiFi service keystore password
+      tags:
+        - nifi
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: nifi
+        type: NIFI
+        config:
+        role_config_groups:
+          - type: NIFI_NODE
+            config:
+              ssl_server_keystore_keypassword: "{{ keystore_password }}"
+      notify: Services updated
+
+    # SDX, Worker, Master1, Master2, Master3
+    - name: Establish SDX host template
+      tags:
+        - host_template
+      cloudera.cluster.host_template:
+        cluster: full-base-cluster
+        name: SDX
+        role_config_groups:
+          - service: "{{ __atlas.service.name }}"
+            type: ATLAS_SERVER
+          - service: "{{ __hdfs.service.name }}"
+            type: BALANCER
+          - service: "{{ __dataviz.service.name }}"
+            type: DATAVIZ_REVERSE_PROXY
+          - service: "{{ __dataviz.service.name }}"
+            type: DATAVIZ_WEBSERVER
+          - service: "{{ __flink.service.name }}"
+            type: GATEWAY
+          - service: "{{ __hive.service.name }}"
+            type: GATEWAY
+          - service: "{{ __hue.service.name }}"
+            type: HUE_LOAD_BALANCER
+          - service: "{{ __hue.service.name }}"
+            type: HUE_SERVER
+          - service: "{{ __hue.service.name }}"
+            type: KT_RENEWER
+          - service: "{{ __impala.service.name }}"
+            type: CATALOGSERVER
+          - service: "{{ __impala.service.name }}"
+            type: STATESTORE
+          - service: "{{ __knox.service.name }}"
+            type: KNOX_GATEWAY
+          - service: "{{ __livy.service.name }}"
+            type: GATEWAY
+          - service: "{{ __livy.service.name }}"
+            type: LIVY_SERVER_FOR_SPARK3
+          - service: "{{ __nifiregistry.service.name }}"
+            type: GATEWAY
+          - service: "{{ __nifiregistry.service.name }}"
+            type: NIFI_REGISTRY_SERVER
+          - service: "{{ __ozone.service.name }}"
+            type: GATEWAY
+          - service: "{{ __ozone.service.name }}"
+            type: OZONE_RECON
+          - service: "{{ __ozone.service.name }}"
+            type: S3_GATEWAY
+          - service: "{{ __ranger.service.name }}"
+            type: RANGER_ADMIN
+          - service: "{{ __ranger.service.name }}"
+            type: RANGER_TAGSYNC
+          - service: "{{ __ranger.service.name }}"
+            type: RANGER_USERSYNC
+          - service: "{{ __smm.service.name }}"
+            type: STREAMS_MESSAGING_MANAGER_SERVER
+          - service: "{{ __smm.service.name }}"
+            type: STREAMS_MESSAGING_MANAGER_UI
+          - service: "{{ __spark.service.name }}"
+            type: SPARK3_YARN_HISTORY_SERVER
+          - service: "{{ __ssb.service.name }}"
+            type: MATERIALIZED_VIEW_ENGINE
+          - service: "{{ __ssb.service.name }}"
+            type: STREAMING_SQL_ENGINE
+          - service: "{{ __tez.service.name }}"
+            type: GATEWAY
+      notify: Services updated
+
+    - name: Establish Master1 host template
+      tags:
+        - host_template
+      cloudera.cluster.host_template:
+        cluster: full-base-cluster
+        name: Master1
+        role_config_groups:
+          - service: "{{ __hbase.service.name }}"
+            type: MASTER
+          - service: "{{ __hdfs.service.name }}"
+            type: NAMENODE
+          - service: "{{ __kudu.service.name }}"
+            type: KUDU_MASTER
+          - service: "{{ __ozone.service.name }}"
+            type: OZONE_MANAGER
+          - service: "{{ __ozone.service.name }}"
+            type: STORAGE_CONTAINER_MANAGER
+          - service: "{{ __zookeeper.service.name }}"
+            type: SERVER
+      notify: Services updated
+
+    - name: Establish Master2 host template
+      tags:
+        - host_template
+      cloudera.cluster.host_template:
+        cluster: full-base-cluster
+        name: Master2
+        role_config_groups:
+          - service: "{{ __flink.service.name }}"
+            type: FLINK_HISTORY_SERVER
+          - service: "{{ __hbase.service.name }}"
+            type: MASTER
+          - service: "{{ __kudu.service.name }}"
+            type: KUDU_MASTER
+          - service: "{{ __ozone.service.name }}"
+            type: OZONE_MANAGER
+          - service: "{{ __ozone.service.name }}"
+            type: STORAGE_CONTAINER_MANAGER
+          - service: "{{ __yarn.service.name }}"
+            type: JOBHISTORY
+          - service: "{{ __yarn.service.name }}"
+            type: RESOURCEMANAGER
+          - service: "{{ __zookeeper.service.name }}"
+            type: SERVER
+      notify: Services updated
+
+    - name: Establish Master3 host template
+      tags:
+        - host_template
+      cloudera.cluster.host_template:
+        cluster: full-base-cluster
+        name: Master3
+        role_config_groups:
+          - service: "{{ __hbase.service.name }}"
+            type: MASTER
+          - service: "{{ __hdfs.service.name }}"
+            type: SECONDARYNAMENODE
+          - service: "{{ __hive.service.name }}"
+            type: HIVEMETASTORE
+          - service: "{{ __hive_on_tez.service.name }}"
+            type: HIVESERVER2
+          - service: "{{ __kafka.service.name }}"
+            type: KRAFT
+          - service: "{{ __kudu.service.name }}"
+            type: KUDU_MASTER
+          - service: "{{ __ozone.service.name }}"
+            type: OZONE_MANAGER
+          - service: "{{ __ozone.service.name }}"
+            type: STORAGE_CONTAINER_MANAGER
+          - service: "{{ __solr.service.name }}"
+            type: SOLR_SERVER
+          - service: "{{ __zookeeper.service.name }}"
+            type: SERVER
+      notify: Services updated
+
+    - name: Establish Worker host template
+      tags:
+        - host_template
+      cloudera.cluster.host_template:
+        cluster: full-base-cluster
+        name: Worker
+        role_config_groups:
+          - service: "{{ __hbase.service.name }}"
+            type: REGIONSERVER
+          - service: "{{ __hdfs.service.name }}"
+            type: DATANODE
+          - service: "{{ __impala.service.name }}"
+            type: IMPALAD
+          - service: "{{ __kafka.service.name }}"
+            type: KAFKA_BROKER
+          - service: "{{ __kudu.service.name }}"
+            type: KUDU_TSERVER
+          - service: "{{ __nifi.service.name }}"
+            type: NIFI_NODE
+          - service: "{{ __ozone.service.name }}"
+            type: OZONE_DATANODE
+          - service: "{{ __yarn.service.name }}"
+            type: NODEMANAGER
+      notify: Services updated
+
+- name: Provision Full cluster role instances to hosts
+  hosts: base
+  gather_facts: false
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  tags:
+    - cluster
+    - roles
+  tasks:
+    - name: Provision host to cluster
+      delegate_to: localhost
+      cloudera.cluster.host:
+        name: "{{ inventory_hostname }}" # str
+        cluster: full-base-cluster
+        host_template: "{{ host_template | default(omit) }}"
+
+- name: Configure Hue WebHDFS with NAMENODE role reference
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  handlers:
+    - name: Services updated
+      ansible.builtin.set_fact:
+        services_updated: true
+  tags:
+    - cluster
+    - hue
+    - post_config
+  tasks:
+    - name: Get NAMENODE role reference
+      cloudera.cluster.service_role_info:
+        cluster: full-base-cluster
+        service: hdfs
+        type: NAMENODE
+      register: __namenode_roles
+
+    - name: Update Hue WebHDFS configuration
+      when: __namenode_roles.roles | length > 0
+      cloudera.cluster.service:
+        cluster: full-base-cluster
+        name: hue
+        type: HUE
+        config:
+          hue_webhdfs: "{{ __namenode_roles.roles[0].name }}"
+      notify: Services updated
+
+- name: Add Dataviz topology to Knox
+  hosts: base
+  become: true
+  gather_facts: false
+  tags:
+    - knox
+    - dataviz
+  vars:
+    cm_license_path: "{{ lookup('env', 'CDP_LICENSE_FILE') }}"
+    cloudera_manager_repo_username: "{{ lookup('cloudera.cluster.cm_license', cm_license_path).uuid }}"
+    cloudera_manager_repo_password: "{{ lookup('cloudera.cluster.cm_license', cm_license_path).password }}"
+    cloudera_knox_services_directory: "/opt/cloudera/parcels/CDH/lib/knox/data/services"
+    dataviz_build: "{{ hostvars['localhost']['cloudera_parcels']['DATAVIZ'] }}"
+    dataviz_version: "{{ dataviz_build.split('-')[0] }}"
+    dataviz_knox_archive: "DATAVIZ-KNOX-{{ dataviz_build }}.tgz"
+    dataviz_knox_url: "https://archive.cloudera.com/p/cdv/{{ dataviz_version }}/redhat8/yum/{{ dataviz_knox_archive }}"
+  tasks:
+    - name: Create temporary dataviz directory
+      ansible.builtin.tempfile:
+        state: directory
+      register: __dataviz_tempdir
+
+    - name: Download Dataviz Knox CSD tarball to temporary directory
+      ansible.builtin.get_url:
+        url: "{{ dataviz_knox_url }}"
+        dest: "{{ __dataviz_tempdir.path }}/{{ dataviz_knox_archive }}"
+        url_username: "{{ cloudera_manager_repo_username }}"
+        url_password: "{{ cloudera_manager_repo_password }}"
+        mode: "0644"
+
+    - name: Extract tarball from temporary directory to Knox services directory
+      ansible.builtin.unarchive:
+        src: "{{ __dataviz_tempdir.path }}/{{ dataviz_knox_archive }}"
+        dest: "{{ cloudera_knox_services_directory }}"
+        owner: root
+        group: root
+        remote_src: true
+        mode: "0755"
+
+    - name: Remove the temporary directory
+      ansible.builtin.file:
+        path: "{{ __dataviz_tempdir.path }}"
+        state: absent
+
+- name: Manage Full cluster state
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  module_defaults:
+    group/cloudera.cluster.deployment:
+      host: "cm.{{ groups['reverse_proxy'] | map('extract', hostvars, 'ansible_host') | first }}.{{ public_domain }}"
+      port: 80
+      username: admin
+      password: "{{ cloudera_manager_admin_password }}"
+      ssl_ca_cert: "{{ caddy_ca_pem | default(omit) }}"
+      verify_tls: "{{ (caddy_self_signed is defined and caddy_ca_pem is undefined) | ternary('no', 'yes') }}"
+  tags:
+    - cluster
+    - state
+  tasks:
+    - name: Ensure Full cluster started
+      cloudera.cluster.cluster:
+        name: full-base-cluster
+        state: "{{ services_updated | default(False) | ternary('restarted', 'started') }}"
+        force: true # Force first run
+
+    - name: Reset cluster status variable
+      when: services_updated is defined
+      ansible.builtin.set_fact:
+        services_updated: false
+
+    - name: Query CMS status
+      cloudera.cluster.cm_service_info:
+      register: __cms
+
+    - name: Refresh CMS configuration
+      when: __cms.service.config_staleness_status == "STALE"
+      cloudera.cluster.cm_service:
+        state: restarted

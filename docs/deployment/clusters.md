@@ -204,6 +204,65 @@ ansible-navigator run playbooks/csa-cluster.yml -e @config.yml
 
 **Services**: All Kafka cluster services + Flink + SQL Stream Builder
 
+
+### Streaming Cluster
+
+A base cluster combining additional Flink/SQL Stream Builder, Streams Messaging Manager, and NiFi — the Full Cluster's streaming services.
+
+```bash
+ansible-navigator run playbooks/streaming-cluster.yml -e @config.yml
+```
+
+**Services**: ZooKeeper, HDFS, YARN, Tez, Ozone, Kafka, HBase, Solr, Ranger, Atlas, Hive, Hive-on-Tez, Knox, Flink, Kudu, Impala, SQL Stream Builder, Streams Messaging Manager, NiFi, NiFi Registry
+
+**CSDs**: CSA (Flink/SSB) `1.17.0.0`, CFM (NiFi) `4.12.0.0`
+
+**Parcels**: CDH `7.3.2`, FLINK `1.20.1-csa1.17.0.0`, CFM `4.12.0.0`
+
+!!! warning "Requires a larger instance type"
+    Running this many services on a single set of nodes exceeds the memory and CPU capacity of the default `t3a.xlarge` instance type used for the `sdx`, `base_masters`, and `base_workers` host groups.
+
+    Before deploying this cluster, edit `tf_cluster_aws/hosts_base.tf` and change `instance_type` from `t3a.xlarge` to `t3a.2xlarge` for the `sdx`, `base_masters`, and `base_workers` modules (the `manager` module can stay on `r5a.xlarge`). Re-run the infrastructure playbook to resize the nodes before running `streaming-cluster.yml`. See [Customizing Node Sizing](infrastructure.md#customizing-node-sizing) for details.
+
+**Host Template Distribution**:
+
+| Template | Roles |
+|----------|-------|
+| **SDX** | Atlas Server, HDFS Balancer, Flink Gateway, Hive Gateway, Impala Catalog Server/StateStore, Knox Gateway, NiFi Registry Server/Gateway, Ozone Gateway/Recon/S3 Gateway, Ranger Admin/TagSync/UserSync, SMM Server/UI, SSB Materialized View Engine/Streaming SQL Engine, Tez Gateway |
+| **Master1** | HBase Master, HDFS NameNode, Kudu Master, Ozone Manager, Ozone SCM, ZooKeeper Server |
+| **Master2** | Flink History Server, HBase Master, Kudu Master, Ozone Manager, Ozone SCM, YARN JobHistory/ResourceManager, ZooKeeper Server |
+| **Master3** | HBase Master, HDFS Secondary NameNode, Hive Metastore, Hive-on-Tez HiveServer2, Kafka KRaft, Kudu Master, Ozone Manager, Ozone SCM, Solr Server, ZooKeeper Server |
+| **Worker** | HBase RegionServer, HDFS DataNode, Impala Daemon, Kafka Broker, Kudu Tablet Server, NiFi Node, Ozone DataNode, YARN NodeManager |
+
+### Full Cluster
+
+Base cluster running both CSA and CFM streaming services and Data Visualization service.
+
+```bash
+ansible-navigator run playbooks/full-cluster.yml -e @config.yml
+```
+
+**Services**: ZooKeeper, HDFS, YARN, Tez, Ozone, Kafka, HBase, Solr, Ranger, Atlas, Hive, Hive-on-Tez, Knox, Flink, Kudu, Impala, Spark3, Livy, SQL Stream Builder, Streams Messaging Manager, NiFi, NiFi Registry, Hue, Data Visualization
+
+**CSDs**: CSA (Flink/SSB) `1.17.0.0`, Data Visualization `8.1.1.1000`, CFM (NiFi) `4.12.0.0`
+
+**Parcels**: CDH `7.3.2`, FLINK `1.20.1-csa1.17.0.0`, DATAVIZ `8.1.1.1000`, CFM `4.12.0.0`
+
+!!! warning "Requires a larger instance type"
+    Running every service on a single set of nodes exceeds the memory and CPU capacity of the default `t3a.xlarge` instance type used for the `sdx`, `base_masters`, and `base_workers` host groups.
+
+    Before deploying this cluster, edit `tf_cluster_aws/hosts_base.tf` and change `instance_type` from `t3a.xlarge` to `t3a.2xlarge` for the `sdx`, `base_masters`, and `base_workers` modules (the `manager` module can stay on `r5a.xlarge`). Re-run the infrastructure playbook to resize the nodes before running `full-cluster.yml`. See [Customizing Node Sizing](infrastructure.md#customizing-node-sizing) for details.
+
+**Host Template Distribution**:
+
+| Template | Roles |
+|----------|-------|
+| **SDX** | Atlas Server, HDFS Balancer, Dataviz Reverse Proxy/Webserver, Flink Gateway, Hive Gateway, Hue Load Balancer/Server/KT Renewer, Impala Catalog Server/StateStore, Knox Gateway, Livy Gateway/Server, NiFi Registry Server/Gateway, Ozone Gateway/Recon/S3 Gateway, Ranger Admin/TagSync/UserSync, SMM Server/UI, Spark3 History Server, SSB Materialized View Engine/Streaming SQL Engine, Tez Gateway |
+| **Master1** | HBase Master, HDFS NameNode, Kudu Master, Ozone Manager, Ozone SCM, ZooKeeper Server |
+| **Master2** | Flink History Server, HBase Master, Kudu Master, Ozone Manager, Ozone SCM, YARN JobHistory/ResourceManager, ZooKeeper Server |
+| **Master3** | HBase Master, HDFS Secondary NameNode, Hive Metastore, Hive-on-Tez HiveServer2, Kafka KRaft, Kudu Master, Ozone Manager, Ozone SCM, Solr Server, ZooKeeper Server |
+| **Worker** | HBase RegionServer, HDFS DataNode, Impala Daemon, Kafka Broker, Kudu Tablet Server, NiFi Node, Ozone DataNode, YARN NodeManager |
+
 ## Runtime
 
 Each cluster deployment takes approximately **10–20 minutes** depending on the number of services.
