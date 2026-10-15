@@ -67,12 +67,9 @@ After stages 1–3, deploy any one of the following clusters:
 
 | Playbook | Description |
 |----------|-------------|
-| `ozone-cluster.yml` | Ozone-enabled base cluster |
-| `kafka-cluster.yml` | Kafka base cluster |
-| `flink-cluster.yml` | Flink base cluster |
-| `nifi-cluster.yml` | NiFi (CFM) cluster |
-| `nifi2.0-cluster.yml` | NiFi 2.0 cluster |
-| `csa-cluster.yml` | CSA (Cloudera Streaming Analytics) full cluster |
+| `ozone-cluster.yml` | Base cluster with Ozone storage enabled |
+| `streaming-cluster.yml` | Base cluster with Flink, SQL Stream Builder, Streams Messaging Manager, and NiFi enabled |
+| `full-cluster.yml` | Base cluster with a comprehensive set of Cloudera services enabled |
 
 !!! tip
     The cluster playbooks are designed to be run after the base deployment (infrastructure + services + CMS).

@@ -27,11 +27,6 @@
 :!playbooks/resume.yml
 
 # Playbooks (base)
-:!playbooks/kafka-cluster.yml
-:!playbooks/flink-cluster.yml
-:!playbooks/nifi-cluster.yml
-:!playbooks/nifi2.0-cluster.yml
-:!playbooks/csa-cluster.yml
 :!playbooks/full-cluster.yml
 :!playbooks/streaming-cluster.yml
 
