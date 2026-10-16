@@ -27,12 +27,8 @@
 :!playbooks/resume.yml
 
 # Playbooks (base)
-:!playbooks/kafka-cluster.yml
-:!playbooks/flink-cluster.yml
-:!playbooks/nifi-cluster.yml
-:!playbooks/nifi2.0-cluster.yml
-:!playbooks/csa-cluster.yml
-
+:!playbooks/full-cluster.yml
+:!playbooks/streaming-cluster.yml
 
 # Templates (all topologies)
 :!playbooks/templates/cloudera_manager.caddyfile.j2
@@ -46,6 +42,7 @@
 
 # Templates (base, onenode)
 :!playbooks/templates/grafana.caddyfile.j2
+:!playbooks/templates/grafana_ldap.toml.j2
 :!playbooks/templates/prometheus.caddyfile.j2
 
 # Terraform (all topologies)
@@ -54,6 +51,7 @@
 :!tf_cluster_aws/outputs.tf
 :!tf_cluster_aws/vpc.tf
 :!tf_cluster_aws/ssh.tf
+:!tf_cluster_aws/ssh_config.tf
 :!tf_cluster_aws/network.tf
 :!tf_cluster_aws/hosts_common.tf
 :!tf_cluster_aws/inventory.tf

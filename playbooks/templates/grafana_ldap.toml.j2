@@ -1,0 +1,35 @@
+[[servers]]
+host = "{{ ipaserver_host }}"
+port = 636
+use_ssl = true
+start_tls = false
+ssl_skip_verify = false
+
+bind_dn = "uid=grafana-bind,cn=users,cn=accounts,{{ ipa_base_dn }}"
+bind_password = "{{ grafana_bind_password }}"
+
+search_filter = "(uid=%s)"
+search_base_dns = ["cn=users,cn=accounts,{{ ipa_base_dn }}"]
+
+group_search_filter = "(&(objectClass=ipausergroup)(member=%s))"
+group_search_base_dns = ["cn=groups,cn=accounts,{{ ipa_base_dn }}"]
+group_search_filter_user_attribute = "dn"
+
+[servers.attributes]
+name = "givenName"
+surname = "sn"
+username = "uid"
+member_of = "memberOf"
+email =  "mail"
+
+[[servers.group_mappings]]
+group_dn = "cn=grafana-admins,cn=groups,cn=accounts,{{ ipa_base_dn }}"
+org_role = "Admin"
+
+[[servers.group_mappings]]
+group_dn = "cn=grafana-editors,cn=groups,cn=accounts,{{ ipa_base_dn }}"
+org_role = "Editor"
+
+[[servers.group_mappings]]
+group_dn = "*"
+org_role = "Viewer"
