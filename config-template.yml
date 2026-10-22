@@ -52,8 +52,8 @@ owner_email: "{{ mandatory }}" # Used for resource tagging and pgAdmin login
 #
 # jdk_version: 17
 # caddy_self_signed: true
-# kerberos_realm: "CLDR.INTERNAL"
-# dns_domain: "cldr.internal"
+# kerberos_realm: "CLDR.ARPA"
+# dns_domain: "cldr.arpa"
 # public_domain: "nip.io" # Externally routable domain for reverse proxy endpoints. See https://sslip.io/
 
 ### ECS-specific versions (only required for ECS topology)
