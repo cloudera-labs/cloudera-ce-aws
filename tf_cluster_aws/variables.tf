@@ -77,7 +77,7 @@ variable "vpc_ingress_cidr" {
 variable "private_domain" {
   type        = string
   description = "Domain for private hosts"
-  default     = "cldr.internal"
+  default     = "cldr.arpa"
 }
 
 variable "ssh_security_group_name" {

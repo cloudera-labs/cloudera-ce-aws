@@ -61,7 +61,7 @@ jdk_version: 17
 ### Domain Configuration
 
 ```yaml
-dns_domain: "cldr.internal"            # Internal domain managed by local FreeIPA
+dns_domain: "cldr.arpa"            # Internal domain managed by local FreeIPA
 public_domain: "nip.io"             # External domain for reverse proxy endpoints
 ```
 

@@ -47,8 +47,8 @@ cloudera_parcel_repo_urls:
 
 jdk_version: 17
 caddy_self_signed: true
-kerberos_realm: "CLDR.INTERNAL" # The Kerberos realm managed by the local FreeIPA server
-dns_domain: "cldr.internal" # Non-routable, internal domain managed by the local FreeIPA server
+kerberos_realm: "CLDR.ARPA" # The Kerberos realm managed by the local FreeIPA server
+dns_domain: "cldr.arpa" # Non-routable, internal domain managed by the local FreeIPA server
 public_domain: "nip.io" # Externally routable domain for reverse proxy endpoints
 
 ### ECS-specific versions (only used when ecs_masters group is populated)

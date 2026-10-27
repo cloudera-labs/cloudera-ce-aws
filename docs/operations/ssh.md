@@ -56,4 +56,4 @@ ssh <hostname>.<dns_domain>
 ```
 
 !!! tip
-    Host FQDNs use the internal domain (default: `cldr.internal`). For example: `myprefix-base-master-0.cldr.internal`.
+    Host FQDNs use the internal domain (default: `cldr.arpa`). For example: `myprefix-base-master-0.cldr.arpa`.
