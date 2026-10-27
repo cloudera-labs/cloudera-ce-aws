@@ -29,14 +29,14 @@
 # Version is what is found in the support matrix, e.g. label
 # Release is what is found in the archive, e.g. URL path
 
-cloudera_manager_version: 7.13.2
-cloudera_manager_release: "7.13.2.6" # e.g. "7.13.1.400"
+cloudera_manager_version: "7.13.2 SP2"
+cloudera_manager_release: "7.13.2.20000" # e.g. "7.13.1.400"
 
-cloudera_runtime_version: 7.3.2 # e.g. "7.1.9 SP1"
-cloudera_runtime_release: "7.3.2.0" # e.g. "7.1.9.1000"
+cloudera_runtime_version: "7.3.2 SP2" # e.g. "7.1.9 SP1"
+cloudera_runtime_release: "7.3.2.20000" # e.g. "7.1.9.1000"
 
 cloudera_parcels:
-  CDH: "7.3.2-1.cdh7.3.2.p0.77083870"
+  CDH: "7.3.2-1.cdh7.3.2.p20000.83281140"
 cloudera_parcel_csds: []
 cloudera_parcel_repo_urls:
   - https://archive.cloudera.com/p/cdh7/{{ cloudera_runtime_release }}/parcels/
