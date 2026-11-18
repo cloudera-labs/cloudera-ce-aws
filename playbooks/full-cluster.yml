@@ -25,18 +25,18 @@
         cloudera_manager_csds:
           - https://archive.cloudera.com/p/csa/1.17.0.0/csd/FLINK-1.20.1-csa1.17.0.0-77091851.jar
           - https://archive.cloudera.com/p/csa/1.17.0.0/csd/SQL_STREAM_BUILDER-1.20.1-csa1.17.0.0-77091851.jar
-          - https://archive.cloudera.com/p/cdv/8.1.1.1000/redhat9/yum/DATAVIZ-8.1.1.1000-3.p1.77069840.jar
+          - https://archive.cloudera.com/p/cdv/8.1.7-h1000/redhat9/yum/DATAVIZ-8.1.7-h1000-b12.p1.84775800.jar
           - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/NIFI-2.6.0.4.12.0.0-914.jar
           - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/NIFIREGISTRY-2.6.0.4.12.0.0-914.jar
         all_repo_urls:
           - https://archive.cloudera.com/p/cdh7/7.3.2.0/parcels/
           - https://archive.cloudera.com/p/csa/1.17.0.0/parcels/
-          - https://archive.cloudera.com/p/cdv/8.1.1.1000/parcels/
+          - https://archive.cloudera.com/p/cdv/8.1.7-h1000/parcels/
           - https://archive.cloudera.com/p/cfm4/4.12.0.0/redhat9/yum/tars/parcel/
         cloudera_parcels:
           CDH: "7.3.2-1.cdh7.3.2.p0.77083870"
           FLINK: "1.20.1-csa1.17.0.0-77091851"
-          DATAVIZ: "8.1.1.1000-3.p1.77069840"
+          DATAVIZ: "8.1.7-h1000-b12.p1.84775800"
           CFM: "4.12.0.0-914"
 
 - name: Configure hosts for cluster services
