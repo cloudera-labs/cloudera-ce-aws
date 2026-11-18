@@ -55,23 +55,63 @@
     - cloudera.exe.prereq_os
     - cloudera.exe.prereq_network_dns
 
-- name: Enable and configure hosts for cluster deployment
-  hosts: deployment
+- name: Prepare cluster hosts and provision the FreeIPA server in parallel
+  hosts: deployment:freeipa
   gather_facts: true
   become: true
-  tags:
-    - system
-    - system_deployment
-  roles:
-    - cloudera.exe.prereq_thp
-    - cloudera.exe.prereq_rngd
-    - cloudera.exe.prereq_kernel
-    - cloudera.exe.prereq_firewall
-    - cloudera.exe.prereq_services
-    - cloudera.exe.prereq_selinux
-    - cloudera.exe.prereq_python
-    - cloudera.exe.prereq_jdk
-    - cloudera.exe.prereq_supported
+  strategy: free
+  tasks:
+    - name: Prepare the cluster hosts for deployment
+      when: inventory_hostname in groups['deployment']
+      tags:
+        - system
+        - system_deployment
+      ansible.builtin.include_role:
+        name: "{{ __prep_role }}"
+        apply:
+          tags:
+            - system
+            - system_deployment
+      loop:
+        - cloudera.exe.prereq_thp
+        - cloudera.exe.prereq_rngd
+        - cloudera.exe.prereq_kernel
+        - cloudera.exe.prereq_firewall
+        - cloudera.exe.prereq_services
+        - cloudera.exe.prereq_selinux
+        - cloudera.exe.prereq_python
+        - cloudera.exe.prereq_jdk
+        - cloudera.exe.prereq_supported
+      loop_control:
+        loop_var: __prep_role
+
+    - name: Provision the local FreeIPA server
+      when: inventory_hostname in groups['freeipa']
+      tags:
+        - freeipa
+        - freeipa_server
+      ansible.builtin.include_role:
+        name: "{{ __ipa_role }}"
+        apply:
+          tags:
+            - freeipa
+            - freeipa_server
+      loop:
+        - cloudera.exe.freeipa_server
+        - cloudera.exe.freeipa_server_users
+      loop_control:
+        loop_var: __ipa_role
+      vars:
+        tf_inventory: "{{ playbook_dir }}/../tf_cluster_aws"
+        vpc_cidr: "{{ lookup('cloud.terraform.tf_output', 'vpc', project_path=tf_inventory)['cidr_block'] }}"
+        ipaserver_realm: "{{ kerberos_realm }}"
+        ipaserver_domain: "{{ dns_domain }}"
+        ipaserver_forwarders: "{{ [vpc_cidr | ansible.utils.ipmath(2)] }}" # See https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html
+        ipaserver_cidr: "{{ [vpc_cidr] }}"
+        ipaserver_recursion_acl_cidr: "{{ [vpc_cidr] }}"
+        ipaserver_ca_subject: "CN=CLDR-{{ name_prefix }}-RootCA,O={{ kerberos_realm }}"
+        ipadm_password: "{{ freeipa_password | default(lookup('env', 'IPA_PASSWORD', default='Undefined')) }}"
+        ipaadmin_password: "{{ freeipa_password | default(lookup('env', 'IPA_PASSWORD', default='Undefined')) }}"
 
 - name: Provision Caddy reverse proxy service
   hosts: reverse_proxy
@@ -206,28 +246,6 @@
     - role: cloudera.exe.grafana
       when: enable_prometheus | default(false)
 
-- name: Provision local FreeIPA services
-  hosts: freeipa
-  gather_facts: true
-  become: true
-  tags:
-    - freeipa
-    - freeipa_server
-  vars:
-    tf_inventory: "{{ playbook_dir }}/../tf_cluster_aws"
-    vpc_cidr: "{{ lookup('cloud.terraform.tf_output', 'vpc', project_path=tf_inventory)['cidr_block'] }}"
-    ipaserver_realm: "{{ kerberos_realm }}"
-    ipaserver_domain: "{{ dns_domain }}"
-    ipaserver_forwarders: "{{ [vpc_cidr | ansible.utils.ipmath(2)] }}" # See https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html
-    ipaserver_cidr: "{{ [vpc_cidr] }}"
-    ipaserver_recursion_acl_cidr: "{{ [vpc_cidr] }}"
-    ipaserver_ca_subject: "CN=CLDR-{{ name_prefix }}-RootCA,O={{ kerberos_realm }}"
-    ipadm_password: "{{ freeipa_password | default(lookup('env', 'IPA_PASSWORD', default='Undefined')) }}"
-    ipaadmin_password: "{{ freeipa_password | default(lookup('env', 'IPA_PASSWORD', default='Undefined')) }}"
-  roles:
-    - cloudera.exe.freeipa_server
-    - cloudera.exe.freeipa_server_users
-
 - name: Create FreeIPA groups for external auth mappings
   hosts: freeipa
   gather_facts: false
@@ -302,6 +320,15 @@
     ipaclient_realm: "{{ kerberos_realm }}"
     ipaclient_domain: "{{ dns_domain }}"
     ipaadmin_password: "{{ freeipa_password | default(lookup('ansible.builtin.env', 'IPA_PASSWORD', default='Undefined')) }}"
+  pre_tasks:
+    - name: Wait for the FreeIPA server (Kerberos, LDAP, HTTPS)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[groups['freeipa'] | first]['ansible_host'] }}"
+        port: "{{ __ipa_port }}"
+        timeout: 900
+      loop: [88, 389, 443]
+      loop_control:
+        loop_var: __ipa_port
   roles:
     - cloudera.exe.freeipa_client
 
@@ -320,6 +347,15 @@
     ipaclient_realm: "{{ kerberos_realm }}"
     ipaclient_domain: "{{ dns_domain }}"
     ipaadmin_password: "{{ freeipa_password | default(lookup('ansible.builtin.env', 'IPA_PASSWORD', default='Undefined')) }}"
+  pre_tasks:
+    - name: Wait for the FreeIPA server (Kerberos, LDAP, HTTPS)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[groups['freeipa'] | first]['ansible_host'] }}"
+        port: "{{ __ipa_port }}"
+        timeout: 900
+      loop: [88, 389, 443]
+      loop_control:
+        loop_var: __ipa_port
   roles:
     - cloudera.exe.prereq_freeipa_client
     - cloudera.exe.freeipa_client
