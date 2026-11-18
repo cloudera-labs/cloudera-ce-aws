@@ -48,6 +48,8 @@ ansible-navigator:
         ANSIBLE_DEPRECATION_WARNINGS: false
         ANSIBLE_HOST_KEY_CHECKING: false
         ANSIBLE_SSH_RETRIES: 10
+        ANSIBLE_FORKS: 10
+        ANSIBLE_PIPELINING: true
     image: ghcr.io/cloudera-labs/cloudera-ce-aws:latest
     pull:
       policy: tag
